@@ -13,6 +13,39 @@ To access this module from JavaScript, you would do the following:
 
 The androidscroll variable is a reference to the Module object.	
 
+	var Ti2DScrollView = require("dk.napp.androidscroll");
+	var scrollView = new Ti2DScrollView.createNappscroll({
+		contentWidth:'auto',
+		contentHeight:'auto',
+		maxZoomValue:4,
+		minZoomValue:0.4,
+		top:0,
+		bottom:0,
+		showVerticalScrollIndicator:true,
+		showHorizontalScrollIndicator:true
+	});
+	
+	scrollView.addEventListener('pinchStart',function(e) {
+		Ti.API.debug("pinchStart");
+	});
+	
+	scrollView.addEventListener('pinch',function(e) {
+		Ti.API.debug("pinch: " + e.scale );
+		
+		// THIS IS NOT A GREAT SOLUTION - BAD FOR PERFORMANCE
+		// WORKING SCALE - But scrollView contentWidth/contentHeight is not updating accordenly 
+		var t = Ti.UI.create2DMatrix().scale(e.scale);
+		currentScale = e.scale;
+		containerView.transform = t;
+	});
+	
+	scrollView.addEventListener('pinchEnd',function(e) {
+		Ti.API.debug("pinchEnd");
+	});
+	
+	
+	See `example/app.js` for the entire example code
+
 ## Methods
 
 scrollTo(x,y)
