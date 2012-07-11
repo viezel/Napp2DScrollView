@@ -44,7 +44,7 @@ The androidscroll variable is a reference to the Module object.
 	});
 	
 	
-	See `example/app.js` for the entire example code
+See `example/app.js` for the entire example code
 
 ## Methods
 
