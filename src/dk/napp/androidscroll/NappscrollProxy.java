@@ -83,41 +83,41 @@ public class NappscrollProxy extends TiViewProxy
 		if (!TiApplication.isUIThread()) {
 			TiMessenger.sendBlockingMainMessage(getMainHandler().obtainMessage(MSG_SCROLL_TO, x, y), getActivity());
 		} else {
-			handleScrollTo(x,y);
+//			handleScrollTo(x,y);
 		}
 	}
 	
-	@Kroll.method
-	public void scrollToBottom() {
-		if (!TiApplication.isUIThread()) {
-			TiMessenger.sendBlockingMainMessage(getMainHandler().obtainMessage(MSG_SCROLL_TO_BOTTOM), getActivity());
-		} else {
-			handleScrollToBottom();
-		}
-	}
+//	@Kroll.method
+//	public void scrollToBottom() {
+//		if (!TiApplication.isUIThread()) {
+//			TiMessenger.sendBlockingMainMessage(getMainHandler().obtainMessage(MSG_SCROLL_TO_BOTTOM), getActivity());
+//		} else {
+//			handleScrollToBottom();
+//		}
+//	}
 	
 	public NappscrollView getScrollView() {
 		return (NappscrollView) getOrCreateView();
 	}
 	
-	public void handleScrollTo(int x, int y) {
-		getScrollView().scrollTo(x, y);
-	}
+//	public void handleScrollTo(int x, int y) {
+//		getScrollView().scrollTo(x, y);
+//	}
 	
-	public void handleScrollToBottom() {
-		getScrollView().scrollToBottom();
-	}
+//	public void handleScrollToBottom() {
+//		getScrollView().scrollToBottom();
+//	}
 	
 	// used to ensure that we are on main thread. When we are, fire handlescrollTo()..
 	@Override
 	public boolean handleMessage(Message msg) {
 		if (msg.what == MSG_SCROLL_TO) {
-			handleScrollTo(msg.arg1, msg.arg2);
+//			handleScrollTo(msg.arg1, msg.arg2);
 			AsyncResult result = (AsyncResult) msg.obj;
 			result.setResult(null); // signal scrolled
 			return true;
 		} else if (msg.what == MSG_SCROLL_TO_BOTTOM) {
-			handleScrollToBottom();
+//			handleScrollToBottom();
 			AsyncResult result = (AsyncResult) msg.obj;
 			result.setResult(null); // signal scrolled
 			return true;
