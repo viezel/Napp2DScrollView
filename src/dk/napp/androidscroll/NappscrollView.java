@@ -494,7 +494,6 @@ public class NappscrollView extends TiUIView {
 				if (pinchDetector != null) {
 					if (ev.getAction() != MotionEvent.ACTION_POINTER_UP
 							|| ev.getAction() != MotionEvent.ACTION_UP) {
-						Log.d(LCAT, "Nikolaj - onTouchEvent - mode = PINCH");
 						if (pinchDetector.onTouchEvent(ev)) {
 							Log.d(LCAT,
 									"Nikolaj - onTouchEvent - returning true");
@@ -572,6 +571,15 @@ public class NappscrollView extends TiUIView {
 					 * middle. matrix.set(savedMatrix);
 					 * matrix.postScale(curZoom, curZoom, mid.x, mid.y);
 					 */
+					
+					Object[] args = {curZoom, mid.x, mid.y};
+					Napp2DMatrix tiMatrix = new Napp2DMatrix();
+					//tiMatrix.scale(args);
+					tiMatrix.scale(args);
+			//		tiMatrix.op.ac
+					applyTransform(tiMatrix); // magic happens here :)
+					Log.d(LCAT, "args length: " + args.length + ", mid.x: " + mid.x + ", mid.y: " + mid.y);
+					
 					KrollDict pinchEvent = new KrollDict();
 					pinchEvent.put("x", mid.x);
 					pinchEvent.put("y", mid.y);
@@ -579,7 +587,6 @@ public class NappscrollView extends TiUIView {
 					proxy.fireEvent("pinchEvent", pinchEvent);
 					return pinchDetector.onTouchEvent(ev);
 				}
-
 				break;
 
 			// Movement with either one or two fingers
@@ -664,14 +671,21 @@ public class NappscrollView extends TiUIView {
 					lastX = x;
 					lastY = y;
 					// TODO - correct pinch so it zooms to the correct middle.
-					matrix.set(savedMatrix);
-					matrix.postScale(curZoom, curZoom, mid.x, mid.y);
+			//		matrix.set(savedMatrix);
+			//		matrix.postScale(curZoom, curZoom, mid.x, mid.y);
 
 					// scale now
-					Object[] args = { curZoom };
-					Ti2DMatrix tiMatrix = new Ti2DMatrix();
-					tiMatrix.scale(args);
-					applyTransform(tiMatrix); // magic happens here :)
+					//Object[] args = { curZoom };
+					
+					//TODO didnt seem to work here!
+//					Object[] args = {curZoom, mid.x, mid.y};
+//					Napp2DMatrix tiMatrix = new Napp2DMatrix();
+//					//tiMatrix.scale(args);
+//					tiMatrix.scale(args);
+//			//		tiMatrix.op.ac
+//					applyTransform(tiMatrix); // magic happens here :)
+//					Log.d(LCAT, "args length: " + args.length);
+					
 
 					// matrix src:
 					// https://github.com/appcelerator/titanium_mobile/blob/master/android/titanium/src/java/org/appcelerator/titanium/view/Ti2DMatrix.java
@@ -680,6 +694,8 @@ public class NappscrollView extends TiUIView {
 
 					// applyTransform(matrix);
 
+					
+					
 					KrollDict pinchEvent = new KrollDict();
 					pinchEvent.put("x", mid.x);
 					pinchEvent.put("y", mid.y);
@@ -1233,6 +1249,10 @@ public class NappscrollView extends TiUIView {
 				int newWidth = (int) (child.getWidth() * curZoom);
 				int	newHeight = (int) (child.getHeight() * curZoom);
 
+				//TODO Anchorpoint!!!! 
+				//TODO URL: http://docs.appcelerator.com/titanium/2.0/#!/api/Titanium.UI.Animation
+				
+				
 				// Log.d(LCAT, "Width: " + getChildAt(0).getWidth() / curZoom +
 				// ", Height: " + getChildAt(0).getHeight() / curZoom);
 				Log.d(LCAT,"scrollTo: "	+ clamp(x, getWidth() - getPaddingRight()- getPaddingLeft(), newWidth)); 
