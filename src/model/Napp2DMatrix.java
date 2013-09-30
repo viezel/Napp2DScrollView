@@ -1,4 +1,6 @@
-package dk.napp.androidscroll;
+package model;
+
+import java.util.Arrays;
 
 import org.appcelerator.titanium.util.TiConvert;
 import org.appcelerator.titanium.view.Ti2DMatrix;
@@ -30,6 +32,22 @@ public class Napp2DMatrix extends Ti2DMatrix {
 			this.type = type;
 		}
 
+		public float getAnchorX() {
+			return anchorX;
+		}
+
+		public void setAnchorX(float anchorX) {
+			this.anchorX = anchorX;
+		}
+
+		public float getAnchorY() {
+			return anchorY;
+		}
+
+		public void setAnchorY(float anchorY) {
+			this.anchorY = anchorY;
+		}
+
 		public void apply(float interpolatedTime, Matrix matrix,
 				int childWidth, int childHeight, float anchorX, float anchorY) {
 			anchorX = anchorX == DEFAULT_ANCHOR_VALUE ? this.anchorX : anchorX;
@@ -58,15 +76,28 @@ public class Napp2DMatrix extends Ti2DMatrix {
 				break;
 			}
 		}
-
 	}
 
 	public Operation op;
-	public Napp2DMatrix next, prev;
+	public Napp2DMatrix next, prev, newMatrix;
 	
 	public Napp2DMatrix(){
 		
 	}
+
+	
+	
+	public Operation getOp() {
+		return op;
+	}
+
+
+
+	public void setOp(Operation op) {
+		this.op = op;
+	}
+
+
 
 	public Napp2DMatrix(Napp2DMatrix prev, int opType){
 		if (prev != null) {
@@ -78,9 +109,10 @@ public class Napp2DMatrix extends Ti2DMatrix {
 			this.op = new Operation(opType);
 	}
 	
-	@Override
+
 	public Napp2DMatrix scale(Object args[]) {
-		Napp2DMatrix newMatrix = new Napp2DMatrix(this, Operation.TYPE_SCALE);
+		Log.d(LCAT, "scale - args: " + Arrays.deepToString(args));
+		newMatrix = new Napp2DMatrix(this, Operation.TYPE_SCALE);
 		newMatrix.op.scaleFromX = newMatrix.op.scaleFromY = VALUE_UNSPECIFIED;
 		newMatrix.op.scaleToX = newMatrix.op.scaleToY = 1.0f;
 

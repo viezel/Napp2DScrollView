@@ -6,30 +6,51 @@
  */
 package dk.napp.androidscroll;
 
+import model.Napp2DMatrix;
 import android.content.Context;
 import android.graphics.Canvas;
+import android.util.Log;
+import android.view.ScaleGestureDetector;
 import android.widget.FrameLayout;
 
 public class ScalingFrameLayout extends FrameLayout {
-    private float scale = 1;
+	private float scale = 1;
+	private float focusX, focusY;
 
-    public ScalingFrameLayout(Context context) {
-        super(context);
-        setWillNotDraw(false);
-    }
+	public ScalingFrameLayout(Context context) {
+		super(context);
+		setWillNotDraw(false);
+	}
 
-    public void setScale(float factor){
-        scale = factor;
-        invalidate();
-    }
-    public float getScale(){
-        return scale;
-    }
+	public void setScale(float factor) {
+		scale = factor;
+		invalidate();
+	}
 
-    @Override
-    public void onDraw(Canvas canvas){
-        canvas.scale(scale, scale);
-        super.onDraw(canvas);
-    }
+	public float getScale() {
+		return scale;
+	}
 
+	public float getFocusX() {
+		return focusX;
+	}
+
+	public void setFocusX(float focusX) {
+		this.focusX = focusX;
+	}
+
+	public float getFocusY() {
+		return focusY;
+	}
+
+	public void setFocusY(float focusY) {
+		this.focusY = focusY;
+	}
+	
+	@Override
+	public void onDraw(Canvas canvas) {
+		canvas.scale(scale, scale, focusX, focusY);
+		super.onDraw(canvas);
+		Log.d("ScalingFrameLayout", "canvas - width: " + canvas.getWidth() + ", height: " + canvas.getHeight() + ", focusX: " + focusX + ", focusY: " + focusY);
+	}
 }
