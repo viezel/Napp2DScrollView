@@ -6,29 +6,33 @@
  */
 package dk.napp.androidscroll;
 
-import model.Napp2DMatrix;
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Matrix;
+import android.graphics.Point;
 import android.util.Log;
 import android.view.ScaleGestureDetector;
 import android.widget.FrameLayout;
 
 public class ScalingFrameLayout extends FrameLayout {
-	private float scale = 1;
-	private float focusX, focusY;
-
+	
+	public float curZoomDifference;
+	private float curZoom = 1;
+	public float focusX, focusY;
+	public float translateX, translateY;
+	
 	public ScalingFrameLayout(Context context) {
 		super(context);
 		setWillNotDraw(false);
 	}
 
 	public void setScale(float factor) {
-		scale = factor;
+		curZoom = factor;
 		invalidate();
 	}
 
 	public float getScale() {
-		return scale;
+		return curZoom;
 	}
 
 	public float getFocusX() {
@@ -46,11 +50,17 @@ public class ScalingFrameLayout extends FrameLayout {
 	public void setFocusY(float focusY) {
 		this.focusY = focusY;
 	}
-	
+
 	@Override
 	public void onDraw(Canvas canvas) {
-		canvas.scale(scale, scale, focusX, focusY);
+		//canvas.translate(translateX, translateY);
+		
+		//TODO
+		//The 4 parameter canvas.scale method call would enable pinch zoom to 
+		//function on the entire image, however our boundaries at their current state, doesnt support that.
+		//canvas.scale(curZoom, curZoom, focusX, focusY);¨
+		
+		canvas.scale(curZoom, curZoom);
 		super.onDraw(canvas);
-		Log.d("ScalingFrameLayout", "canvas - width: " + canvas.getWidth() + ", height: " + canvas.getHeight() + ", focusX: " + focusX + ", focusY: " + focusY);
 	}
 }

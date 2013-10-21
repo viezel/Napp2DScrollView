@@ -9,8 +9,6 @@ package dk.napp.androidscroll;
 import java.util.HashMap;
 import java.util.List;
 
-import model.Napp2DMatrix;
-
 import org.appcelerator.kroll.KrollDict;
 import org.appcelerator.kroll.KrollProxy;
 import org.appcelerator.kroll.common.Log;
@@ -18,20 +16,18 @@ import org.appcelerator.kroll.common.TiConfig;
 import org.appcelerator.titanium.TiC;
 import org.appcelerator.titanium.TiDimension;
 import org.appcelerator.titanium.proxy.TiViewProxy;
-import org.appcelerator.titanium.util.TiAnimationBuilder;
 import org.appcelerator.titanium.util.TiConvert;
-import org.appcelerator.titanium.view.Ti2DMatrix;
 import org.appcelerator.titanium.view.TiCompositeLayout;
 import org.appcelerator.titanium.view.TiCompositeLayout.LayoutArrangement;
 import org.appcelerator.titanium.view.TiUIView;
 
-import ti.modules.titanium.ui.widget.TiUIImageView;
-
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Matrix;
+import android.graphics.Point;
 import android.graphics.PointF;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.util.FloatMath;
 import android.view.Display;
 import android.view.FocusFinder;
@@ -57,7 +53,11 @@ public class NappscrollView extends TiUIView {
 	private float maxZoom = 5.f;
 	private float minZoom = 0.1f;
 	private float curZoom = 1.0f;
+	private float oldCurZoom;
 	private View mainSubView;
+	private RectF displayRect;
+	private float pythagorasC;
+	private float adjustX, adjustY;
 
 	Matrix matrix = new Matrix();
 	Matrix savedMatrix = new Matrix();
@@ -70,9 +70,6 @@ public class NappscrollView extends TiUIView {
 	private static final boolean DBG = TiConfig.LOGD;
 	public static final float MAX_SCROLL_FACTOR = 0.5f;
 	private int offsetX = 0, offsetY = 0;
-
-	// private TiAnimationBuilder animBuilder;
-
 	// private boolean setInitialOffset = false;
 
 	/**
@@ -175,7 +172,6 @@ public class NappscrollView extends TiUIView {
 				}
 
 				measuredHeight = Math.max(childMeasuredHeight, measuredHeight);
-
 				measuredHeight = Math.max(parentHeight, measuredHeight);
 			} else {
 				measuredHeight = contentHeight;
@@ -283,6 +279,7 @@ public class NappscrollView extends TiUIView {
 		private Matrix savedMatrix = new Matrix();
 		private PointF start = new PointF();
 		private PointF mid = new PointF();
+		private float x, y;
 
 		public TDSV(Context context, LayoutArrangement arrangement) {
 			super(context);
@@ -295,7 +292,6 @@ public class NappscrollView extends TiUIView {
 				Log.i("UIPinchView", "Multitouch not supported on this device!");
 			setScrollBarStyle(SCROLLBARS_INSIDE_OVERLAY);
 			setFillViewport(true);
-
 			setScrollContainer(true);
 			mScroller = new Scroller(context);
 			setFocusable(true);
@@ -324,17 +320,10 @@ public class NappscrollView extends TiUIView {
 
 		// used to find the point in the middle of two fingers.
 		private void midBetweenTwoPoints(PointF point, MotionEvent event) {
-			float x = event.getX(0) + event.getX(1);
-			float y = event.getY(0) + event.getY(1);
+			float x = event.getX(0) * curZoom + event.getX(1) * curZoom;
+			float y = event.getY(0) * curZoom + event.getY(1) * curZoom;
 			point.set(x / 2, y / 2);
 		}
-
-		// // used to find the space between two fingers.
-		// private float distanceBetweenTwoPoints(MotionEvent event) {
-		// float x = event.getX(0) - event.getX(1);
-		// float y = event.getY(0) - event.getY(1);
-		// return FloatMath.sqrt(x * x + y * y);
-		// }
 
 		@Override
 		public void addView(View child,
@@ -439,7 +428,8 @@ public class NappscrollView extends TiUIView {
 			switch (action) {
 			case MotionEvent.ACTION_MOVE:
 				mode = DRAG;
-				Log.d(LCAT, "onInterceptTouchEvent - mIsBeingDragged: " + mIsBeingDragged);
+				Log.d(LCAT, "onInterceptTouchEvent - mIsBeingDragged: "
+						+ mIsBeingDragged);
 				final int yDiff = (int) Math.abs(y - mLastMotionY);
 				final int xDiff = (int) Math.abs(x - mLastMotionX);
 				if (yDiff > mTouchSlop || xDiff > mTouchSlop) {
@@ -491,7 +481,7 @@ public class NappscrollView extends TiUIView {
 
 		@Override
 		public boolean onTouchEvent(MotionEvent ev) {
-			// if mode is PINCH = return and use ScaleGestureDetector
+			// this is used to not resetting the pinched value
 			if (mode == PINCH) {
 				if (pinchDetector != null) {
 					if (ev.getAction() != MotionEvent.ACTION_POINTER_UP
@@ -504,327 +494,266 @@ public class NappscrollView extends TiUIView {
 					}
 				}
 			}
-
 			if (ev.getAction() == MotionEvent.ACTION_DOWN
 					&& ev.getEdgeFlags() != 0) {
 				return false;
 			}
-
 			if (!canScroll()) {
 				return false;
 			}
-
 			if (mVelocityTracker == null) {
 				mVelocityTracker = VelocityTracker.obtain();
 			}
 			mVelocityTracker.addMovement(ev);
-
 			final int action = ev.getAction();
 			float y = ev.getY() * curZoom;
-			// float y = mScroller.getCurrY();
 			float x = ev.getX() * curZoom;
-			// float x = mScroller.getCurrX();
 			Log.d(LCAT, "onTouchEvent - x: " + x + ", y: " + y);
-
 			float oldDist = 1f;
-
 			switch (action & MotionEvent.ACTION_MASK) {
-				// One finger down
-				case MotionEvent.ACTION_DOWN:
-					Log.d(LCAT, "ACTION_DOWN");
-					mode = DRAG;
-	
-					// NEW
-					// startX = ev.getX() - previousTranslateX;
-					// startY = ev.getY() - previousTranslateY;
-	
-					Log.d(LCAT, "Nikolaj - onTouchEvent 1 finger - mode = DRAG");
-					if (!mScroller.isFinished()) {
-						mScroller.abortAnimation();
-					}
-					activePointerId = ev.getPointerId(0);
-					mLastMotionY = y;
-					mLastMotionX = x;
+			// One finger down
+			case MotionEvent.ACTION_DOWN:
+				Log.d(LCAT, "ACTION_DOWN");
+				mode = DRAG;
+				Log.d(LCAT, "Nikolaj - onTouchEvent 1 finger - mode = DRAG");
+				if (!mScroller.isFinished()) {
+					mScroller.abortAnimation();
+				}
+				activePointerId = ev.getPointerId(0);
+				mLastMotionY = y;
+				mLastMotionX = x;
+				lastX = x;
+				lastY = y;
+				Log.d(LCAT, "ACTION_DOWN - x: " + x + ", y:  " + y
+						+ ", mLastMotionX: " + mLastMotionX
+						+ ", mLastMotionY: " + mLastMotionY + ", lastX: "
+						+ lastX + ", lastY: " + lastY);
+				break;
+			// Second finger down. Only activated if the fingers are more than
+			// 10 pixel apart (sometimes one finger is registered as two)
+			// 2nd finger is never detected
+			case MotionEvent.ACTION_POINTER_DOWN:
+				Log.d(LCAT, "ACTION_POINTER_DOWN - MODE PINCH");
+
+				// is pointer index valid
+				final int pointerIndex = ev.findPointerIndex(activePointerId);
+				if (pointerIndex == INVALID_POINTER_ID) {
+					break;
+				}
+				x = ev.getX(pointerIndex);
+				y = ev.getY(pointerIndex);
+				Log.d(LCAT, "ACTION_POINTER_DOWN - x:" + x + ", y: " + y);
+				// calc distance
+				oldDist = distanceBetweenTwoFingers(ev);
+				if (oldDist > 10f) {
+					Log.d(LCAT, "PINCH - setting mode to pinch");
+					mode = PINCH;
+					midBetweenTwoPoints(mid, ev);
+					Log.d(LCAT, "distanceBetweenTwoFingers: "
+							+ distanceBetweenTwoFingers(ev));
+					activePointerId = ev.getPointerId(1);
 					lastX = x;
 					lastY = y;
-					Log.d(LCAT, "ACTION_DOWN - x: " + x + ", y:  " + y
-							+ ", mLastMotionX: " + mLastMotionX
-							+ ", mLastMotionY: " + mLastMotionY + ", lastX: "
-							+ lastX + ", lastY: " + lastY);
-					break;
-				// Second finger down. Only activated if the fingers are more than
-				// 10 pixel apart (sometimes one finger is registered as two)
-				// 2nd finger is never detected
-				case MotionEvent.ACTION_POINTER_DOWN:
-					Log.d(LCAT, "ACTION_POINTER_DOWN - MODE PINCH");
-	
-					// is pointer index valid
-					final int pointerIndex = ev.findPointerIndex(activePointerId);
-					if (pointerIndex == INVALID_POINTER_ID) {
-						break;
+					return pinchDetector.onTouchEvent(ev);
+				}
+				break;
+			case MotionEvent.ACTION_MOVE:
+				Log.d(LCAT, "ACTION_MOVE");
+				if (mode == DRAG) {
+					Log.d(LCAT, "DRAGGING - childGetScrollX: "
+							+ getChildAt(0).getScrollX()
+							+ ", childGetScrollY: "
+							+ getChildAt(0).getScrollY());
+					Log.d(LCAT, "DRAGGING - pinchDetector isInProgress: "
+							+ pinchDetector.isInProgress());
+
+					Log.d(LCAT, "DRAGGING - curZoom: " + curZoom + " ScrollX: "
+							+ getScrollX() + ", ScrollY: " + getScrollY());
+					Log.d(LCAT, "DRAG: mLastMotionX: " + mLastMotionX
+							+ ", mLastMotionY: " + mLastMotionY + ", x: " + x
+							+ ", y: " + y);
+
+					// difference between new and old coordinates
+					int deltaX = (int) (mLastMotionX - x);
+					int deltaY = (int) (mLastMotionY - y);
+					Log.d(LCAT, "deltaX: " + deltaX + ", deltaY: " + deltaY);
+					// update the ord coordinates to the newly found
+					mLastMotionX = x;
+					mLastMotionY = y;
+					Log.d(LCAT, "action_move: x: " + x + ", y: " + y);
+					// direction of X
+					if (deltaX < 0) {
+						// if x is negative return 0
+						if (getScrollX() < 0) {
+							scrollBy(deltaX, 0);
+							// deltaX = 0;
+						}
+					} else if (deltaX > 0) {
+						// possible to scroll ?
+						final int rightEdge = getWidth() - getPaddingRight();
+						Log.d(LCAT, "ACTION_MOVE rightEdge: " + rightEdge);
+						Log.d(LCAT, "ACTION_MOVE getPaddingLeft: "
+								+ getScaledChildSide(getChildAt(0)
+										.getPaddingLeft()));
+						Log.d(LCAT, "ACTION_MOVE getRight: "
+								+ getScaledChildSide(getChildAt(0).getRight()));
+						final int availableToScrollRight = ((getScaledChildSide(getChildAt(
+								0).getRight()) - getScrollX()) - rightEdge);
+						Log.d(LCAT, "ACTION_MOVE deltax > 0 (" + deltaX
+								+ "), availableToScroll: "
+								+ availableToScrollRight);
+						// if it is possible to scroll, setting deltaX to the
+						// lowest value.
+						if (availableToScrollRight > 0) {
+							deltaX = Math.min(availableToScrollRight, deltaX);
+							Log.d(LCAT, "Setting deltaX to: " + deltaX);
+						} else {
+							// not possible to scroll, setting deltaX to 0
+							deltaX = 0;
+							Log.d(LCAT, "Setting deltaX to: 0");
+						}
 					}
-	
-					x = ev.getX(pointerIndex);
-					y = ev.getY(pointerIndex);
-					// lastX = x;
-					// lastY = y;
-	
+					// direction of Y
+					if (deltaY < 0) {
+						if (getScrollY() < 0) {
+							scrollBy(0, deltaY);
+						}
+					} else if (deltaY > 0) {
+						// check if it is possible to scroll
+						final int bottomEdge = getHeight() - getPaddingBottom();
+						final int availableToScroll = getScaledChildSide(getChildAt(0).getBottom())- getScrollY() - bottomEdge;
+						if (availableToScroll > 0) {
+							// if it is possible to scroll, setting deltaY to
+							// the lowest value.
+							deltaY = Math.min(availableToScroll, deltaY);
+						} else {
+							// not possible to scroll, setting deltaY to 0
+							deltaY = 0;
+						}
+					}
+					// is there is a difference in x or y coordinate
+					if (deltaY != 0 || deltaX != 0)
+						Log.d(LCAT, "ACTION_MOVE scrollBy - deltaX: " + deltaX
+								+ ", deltaY: " + deltaY);
+					// move the scrolled position of the view - DOES NOT SET THE
+					// POSITION!
+					Log.d(LCAT, "ACTION_MOVE - childGetLeft: "
+							+ getScaledChildSide(getChildAt(0).getLeft())
+							+ ", childGetRight: "
+							+ getScaledChildSide(getChildAt(0).getRight())
+							+ ", childGetTop: "
+							+ getScaledChildSide(getChildAt(0).getTop())
+							+ ", childGetBottom: "
+							+ getScaledChildSide(getChildAt(0).getBottom()));
+					scrollBy(deltaX, deltaY);
+				} else if (mode == PINCH) {
 					// calc distance
 					oldDist = distanceBetweenTwoFingers(ev);
-	
-					if (oldDist > 10f) {
-						Log.d(LCAT, "PINCH - setting mode to pinch");
-						mode = PINCH;
-						savedMatrix.set(matrix);
-						midBetweenTwoPoints(mid, ev);
-						Log.d(LCAT, "distanceBetweenTwoFingers: "
-								+ distanceBetweenTwoFingers(ev));
-						activePointerId = ev.getPointerId(1);
-						lastX = x;
-						lastY = y;
-	
-						/*
-						 * // TODO - correct pinch so it zooms to the correct
-						 * middle. matrix.set(savedMatrix);
-						 * matrix.postScale(curZoom, curZoom, mid.x, mid.y);
-						 */
-	
-						// Src:
-						// https://github.com/appcelerator/titanium_mobile/blob/master/android/titanium/src/java/org/appcelerator/titanium/view/Ti2DMatrix.java
-						// Log.d(LCAT, "Middle - x: " + mid.x + ", y: " + mid.y);
-						// Object[] args = { curZoom, mid.x, mid.y };
-						// Napp2DMatrix tiMatrix = new Napp2DMatrix();
-						// tiMatrix.scale(args);
-						// Log.d(LCAT, "tiMatrix.op.anchorX: "
-						// + tiMatrix.newMatrix.op.anchorX
-						// + ", tiMatrix.op.anchorY: "
-						// + tiMatrix.newMatrix.op.anchorY);
-						// applyTransform(tiMatrix); // magic happens here :)
-						// Log.d(LCAT, "args length: " + args.length + ", mid.x: "
-						// + mid.x + ", mid.y: " + mid.y);
-						// KrollDict pinchEvent = new KrollDict();
-						// pinchEvent.put("x", mid.x);
-						// pinchEvent.put("y", mid.y);
-						// pinchEvent.put("source", proxy);
-						// proxy.fireEvent("pinchEvent", pinchEvent);
-						return pinchDetector.onTouchEvent(ev);
+					Log.d(LCAT, "PINCH - setting mode to pinch");
+					savedMatrix.set(matrix);
+					midBetweenTwoPoints(mid, ev);
+					activePointerId = ev.getPointerId(1);
+					lastX = x;
+					lastY = y;
+					return pinchDetector.onTouchEvent(ev);
+				} else {
+					// Log.e(LCAT, " ACTION_MOVE unknown");
+				}
+				break;
+			// Final finger lifted from screen
+			case MotionEvent.ACTION_UP:
+				Log.d(LCAT, "ACTION_UP");
+				activePointerId = INVALID_POINTER_ID;
+				final VelocityTracker velocityTracker = mVelocityTracker;
+				velocityTracker.computeCurrentVelocity(1000, mMaximumVelocity);
+				int initialXVelocity = (int) (velocityTracker.getXVelocity());
+				int initialYVelocity = (int) (velocityTracker.getYVelocity());
+				if ((Math.abs(initialXVelocity) + Math.abs(initialYVelocity) > mMinimumVelocity)
+						&& getChildCount() > 0) {
+					fling(-initialXVelocity, -initialYVelocity, (int) (x),
+							(int) (y));
+				}
+				if (mVelocityTracker != null) {
+					mVelocityTracker.recycle();
+					mVelocityTracker = null;
+				}
+				mode = NONE;
+				break;
+			// A finger is lifted from the screen, but one remains
+			case MotionEvent.ACTION_POINTER_UP:
+				Log.d(LCAT, "ACTION_POINTER_UP - DRAG");
+				if (mode == PINCH) {
+					final int pointerIndex1 = (ev.getAction() & MotionEvent.ACTION_POINTER_INDEX_MASK) >> MotionEvent.ACTION_POINTER_INDEX_SHIFT;
+					final int pointerId = ev.getPointerId(pointerIndex1);
+					if (pointerId == activePointerId) {
+						final int newPointerIndex = pointerIndex1 == 0 ? 1 : 0;
+						activePointerId = ev.getPointerId(newPointerIndex);
+						lastX = ev.getX(newPointerIndex);
+						lastY = ev.getY(newPointerIndex);
 					}
-					break;
-	
-				// Movement with either one or two fingers
-				// TODO multiply X / Y coordinates with curZoom
-				case MotionEvent.ACTION_MOVE:
-					Log.d(LCAT, "ACTION_MOVE");
-						
-					if (mode == DRAG) {
-						Log.d(LCAT, "DRAGGING - pinchDetector isInProgress: " + pinchDetector.isInProgress());
-
-						Log.d(LCAT, "DRAGGING - curZoom: " + curZoom + " ScrollX: "
-								+ getScrollX() + ", ScrollY: " + getScrollY());
-						Log.d(LCAT, "DRAG: mLastMotionX: " + mLastMotionX
-								+ ", mLastMotionY: " + mLastMotionY + ", x: " + x
-								+ ", y: " + y);
-	
-						// difference between new and old coordinates
-						int deltaX = (int) (mLastMotionX - x);
-						int deltaY = (int) (mLastMotionY - y);
-	
-						Log.d(LCAT, "deltaX: " + deltaX + ", deltaY: " + deltaY);
-	
-						// update the ord coordinates to the newly found
-						mLastMotionX = x;
-						mLastMotionY = y;
-	
-						Log.d(LCAT, "action_move: x: " + x + ", y: " + y);
-	
-						// direction of X
-						if (deltaX < 0) {
-							// if x is negative return 0
-							if (getScrollX() < 0) {
-								scrollBy(deltaX, 0);
-								//deltaX = 0;
-							}
-						} else if (deltaX > 0) {
-							// possible to scroll ?
-							final int rightEdge = getWidth() - getPaddingRight();
-							// Log.d(LCAT, "ACTION_MOVE getRight: " +
-							// getChildAt(0).getRight() * curZoom);
-							// final int availableToScroll = ((int)
-							// (getChildAt(0).getRight() * curZoom)
-							// - getScrollX() - rightEdge);
-							Log.d(LCAT, "ACTION_MOVE getRight: "
-									+ getScaledChildSide(getChildAt(0).getRight()));
-							final int availableToScroll = (getScaledChildSide(getChildAt(0).getRight()) - getScrollX() - rightEdge);
-							Log.d(LCAT, "ACTION_MOVE deltax > 0 (" + deltaX
-									+ "), availableToScroll: " + availableToScroll);
-	
-							// if it is possible to scroll, setting deltaX to the
-							// lowest value.
-							if (availableToScroll > 0) {
-								deltaX = Math.min(availableToScroll, deltaX);
-								Log.d(LCAT, "Setting deltaX to: " + deltaX);
-							} else {
-								// not possible to scroll, setting deltaX to 0
-								deltaX = 0;
-								Log.d(LCAT, "Setting deltaX to: 0");
-							}
-						}
-	
-						// direction of Y
-						if (deltaY < 0) {
-							if (getScrollY() < 0) {
-								// if y is negative, return 0
-							//	deltaY = 0;
-								scrollBy(0, deltaY);
-							}
-						} else if (deltaY > 0) {
-							// check if it is possible to scroll
-							final int bottomEdge = getHeight() - getPaddingBottom();
-							final int availableToScroll = getScaledChildSide(getChildAt(
-									0).getBottom())
-									- getScrollY() - bottomEdge;
-							if (availableToScroll > 0) {
-								// if it is possible to scroll, setting deltaY to
-								// the lowest value.
-								deltaY = Math.min(availableToScroll, deltaY);
-							} else {
-								// not possible to scroll, setting deltaY to 0
-								deltaY = 0;
-							}
-						}
-						// is there is a difference in x or y coordinate
-						if (deltaY != 0 || deltaX != 0)
-							Log.d(LCAT, "ACTION_MOVE scrollBy - deltaX: " + deltaX
-									+ ", deltaY: " + deltaY);
-						// move the scrolled position of the view - DOES NOT SET THE POSITION!
-						scrollBy(deltaX, deltaY);
-						
-					} else if (mode == PINCH) {
-						/*
-						 * // is pointer index valid final int pointerIndex =
-						 * ev.findPointerIndex(activePointerId); if (pointerIndex ==
-						 * INVALID_POINTER_ID) { break; }
-						 * 
-						 * x = ev.getX(pointerIndex); y = ev.getY(pointerIndex);
-						 * //lastX = x; //lastY = y;
-						 */
-	
-						// calc distance
-						oldDist = distanceBetweenTwoFingers(ev);
-	
-						// if (oldDist > 10f) {
-						Log.d(LCAT, "PINCH - setting mode to pinch");
-	
-						savedMatrix.set(matrix);
-						midBetweenTwoPoints(mid, ev);
-	
-						activePointerId = ev.getPointerId(1);
-						lastX = x;
-						lastY = y;
-	
-						// TODO - correct pinch so it zooms to the correct middle.
-						// matrix.set(savedMatrix);R
-						// matrix.postScale(curZoom, curZoom, mid.x, mid.y);
-	
-						// scale now
-						// Object[] args = { curZoom };
-	
-						// TODO didnt seem to work here!
-						// Object[] args = { curZoom, mid.x, mid.y };
-						// Napp2DMatrix tiMatrix = new Napp2DMatrix();
-						// tiMatrix.scale(args);
-						// tiMatrix.scale(args);
-						// // tiMatrix.op.ac
-						// applyTransform(tiMatrix); // magic happens here :)
-						// Log.d(LCAT, "args length: " + args.length);
-	
-						// matrix src:
-						// https://github.com/appcelerator/titanium_mobile/blob/master/android/titanium/src/java/org/appcelerator/titanium/view/Ti2DMatrix.java
-	
-						// view.transform = Ti.createMatrix().scale(0.5);
-	
-						// applyTransform(matrix);
-	
-						KrollDict pinchEvent = new KrollDict();
-						pinchEvent.put("x", mid.x);
-						pinchEvent.put("y", mid.y);
-						pinchEvent.put("source", proxy);
-						proxy.fireEvent("pinchEvent", pinchEvent);
-						return pinchDetector.onTouchEvent(ev);
-						// }
-	
-					} else {
-						// Log.e(LCAT, " ACTION_MOVE unknown");
-					}
-					break;
-				// Final finger lifted from screen
-				case MotionEvent.ACTION_UP:
-					Log.d(LCAT, "ACTION_UP");
-	
-					activePointerId = INVALID_POINTER_ID;
-					final VelocityTracker velocityTracker = mVelocityTracker;
-					velocityTracker.computeCurrentVelocity(1000, mMaximumVelocity);
-					int initialXVelocity = (int) (velocityTracker.getXVelocity());
-					int initialYVelocity = (int) (velocityTracker.getYVelocity());
-					if ((Math.abs(initialXVelocity) + Math.abs(initialYVelocity) > mMinimumVelocity)
-							&& getChildCount() > 0) {
-						fling(-initialXVelocity, -initialYVelocity, (int) (x), (int) (y));
-					}
-					if (mVelocityTracker != null) {
-						mVelocityTracker.recycle();
-						mVelocityTracker = null;
-					}
-					
-	//				mLastMotionX = x;
-	//				mLastMotionY = y;
-					mode = NONE;
-					break;
-				// A finger is lifted from the screen, but one remains
-				case MotionEvent.ACTION_POINTER_UP:
-					Log.d(LCAT, "ACTION_POINTER_UP - DRAG");
-	
-					if (mode == PINCH) {
-						final int pointerIndex1 = (ev.getAction() & MotionEvent.ACTION_POINTER_INDEX_MASK) >> MotionEvent.ACTION_POINTER_INDEX_SHIFT;
-						final int pointerId = ev.getPointerId(pointerIndex1);
-						if (pointerId == activePointerId) {
-							final int newPointerIndex = pointerIndex1 == 0 ? 1 : 0;
-							activePointerId = ev.getPointerId(newPointerIndex);
-							lastX = ev.getX(newPointerIndex);
-							lastY = ev.getY(newPointerIndex);
-						}
-					}
-					mode = DRAG;
-					break;
-				default:
-					break;
+				}
+				mode = DRAG;
+				break;
+			default:
+				break;
 			}
-			// if ((mode == DRAG && curZoom != 1f && mIsBeingDragged) || mode ==
-			// PINCH) {
-			// Log.d(LCAT, "onTouchEvent invalidating!");
-			// invalidate();
-			// }
-			// invalidate();
+			requestLayout();
 			return true;
-		}
-
-		private int getScaledScrollX() {
-			Log.d(LCAT, "getScaledScrollX: " + (int) (getScrollX() * curZoom));
-			return (int) (getScrollX() * curZoom);
-		}
-
-		private int getScaledScrollY() {
-			Log.d(LCAT, "getScaledScrollY: " + (int) (getScrollY() * curZoom));
-			return (int) (getScrollY() * curZoom);
 		}
 
 		private int getScaledChildSide(int side) {
 			return (int) (side * curZoom);
 		}
 		
-		// override in order to correct the coordinates according to the scaled value
+//		private void adjustPan(){
+//			float currentHeight = getScaledChildSide(getChildAt(0).getHeight());
+//			float currentWidth = getScaledChildSide(getChildAt(0).getWidth());
+//			Log.d(LCAT, "adjustPan - currentX + currentWidth = " + (x + currentWidth) + ", currentY + currentHeight: " + (y + currentHeight));
+//			RectF rect = new RectF(x, y, (x + currentWidth), (y + currentHeight));
+//			float diffUp = Math.min(getScaledChildSide(getChildAt(0).getBottom()) - rect.bottom, getScaledChildSide(getChildAt(0).getTop()) - rect.top);
+//			float diffDown = Math.max(getScaledChildSide(getChildAt(0).getBottom()) - rect.bottom, getScaledChildSide(getChildAt(0).getTop()) - rect.top);
+//			float diffLeft = Math.min(getScaledChildSide(getChildAt(0).getLeft()) - rect.left, getScaledChildSide(getChildAt(0).getRight()) - rect.right);
+//			float diffRight = Math.max(getScaledChildSide(getChildAt(0).getLeft()) - rect.left, getScaledChildSide(getChildAt(0).getRight()) - rect.right);
+//						
+//			float dx = 0, dy = 0;
+//			Log.d(LCAT, "adjustPan - rect - top: " + rect.top + ", bottom: " + rect.bottom + ", left: " + rect.left + ", right: " + rect.right);
+//			Log.d(LCAT, "adjustPan - diffUp: " + diffUp + ", diffDown: " + diffDown + ", diffLeft: " + diffLeft + ", diffRight: " + diffRight);
+//			
+//		    if (diffUp > 0) {
+//		        dy += diffUp;
+//		      }
+//		      if (diffDown < 0) {
+//		        dy += diffDown;
+//		      }
+//		      if (diffLeft > 0) {
+//		        dx += diffLeft;
+//		      }
+//		      if (diffRight < 0) {
+//		        dx += diffRight;
+//		      }
+//		      
+//		      Log.d(LCAT, "adjustPan - currentWidth: " + currentWidth + ", rect.width: " + rect.width());
+//		      if(currentWidth < rect.width()){
+//		    	  dx = -x + (rect.width() - currentWidth)/2;
+//		      }
+//		      Log.d(LCAT, "adjustPan - currentHeight: " + currentHeight + ", rect.height: " + rect.height());
+//		      if(currentHeight < rect.height()){
+//		    	  dy = -y + (rect.height() - currentHeight)/2;
+//		      }
+//		      	      
+//		      Log.d(LCAT, "adjustPan - dx: " + dx + ", dy: " + dy);
+//		      Matrix matrix = getCanvasMatrix();
+//		      matrix.postTranslate(dx, dy);
+//		      matrix.preScale(curZoom, curZoom);
+//		}
+				
+
+		// override in order to correct the coordinates according to the scaled
+		// value
 		@Override
 		protected void onScrollChanged(int l, int t, int oldl, int oldt) {
-			Log.d(LCAT, "onScrollChanged: l:" + l + ", t: " + t + ", oldl: " + oldl + ", oldt: " + oldt);
+			Log.d(LCAT, "onScrollChanged: l:" + l + ", t: " + t + ", oldl: "
+					+ oldl + ", oldt: " + oldt);
 			l *= curZoom;
 			t *= curZoom;
 			oldl *= curZoom;
@@ -877,7 +806,6 @@ public class NappscrollView extends TiUIView {
 			Log.d(LCAT,
 					"findFocusableView method - right without fading edge value: "
 							+ rightWithoutFadingEdge);
-
 			if ((preferredFocusable != null)
 					&& (preferredFocusable.getTop() < bottomWithoutFadingEdge)
 					&& (preferredFocusable.getBottom() > topWithoutFadingEdge)
@@ -895,8 +823,6 @@ public class NappscrollView extends TiUIView {
 			List<View> focusables = getFocusables(View.FOCUS_FORWARD);
 			View focusCandidate = null;
 			boolean foundFullyContainedFocusable = false;
-			// Log.d(LCAT, "top: " + top + ", buttom: " + bottom + ", left: " +
-			// left + ", right: " + right);
 			int count = focusables.size();
 			for (int i = 0; i < count; i++) {
 				View view = focusables.get(i);
@@ -958,7 +884,6 @@ public class NappscrollView extends TiUIView {
 					- mLastScroll;
 			if (duration > ANIMATED_SCROLL_GAP) {
 				mScroller.startScroll(getScrollX(), getScrollY(), dx, dy);
-				
 				awakenScrollBars(mScroller.getDuration());
 				invalidate();
 			} else {
@@ -969,7 +894,6 @@ public class NappscrollView extends TiUIView {
 			}
 			mLastScroll = AnimationUtils.currentAnimationTimeMillis();
 		}
-
 
 		@Override
 		protected int computeVerticalScrollRange() {
@@ -1023,48 +947,14 @@ public class NappscrollView extends TiUIView {
 				int oldY = getScrollY();
 				int x = (int) (mScroller.getCurrX());
 				int y = (int) (mScroller.getCurrY());
-				Log.d(LCAT, "computeScroll - x: " + x + ", y: " + y);
-				Log.d(LCAT, "Width: " + getChildAt(0).getWidth() + ", Height: "
-						+ getChildAt(0).getHeight());
-				// curZoom value is added here for the boundary to be correct
-				int newWidth = (int) (getChildAt(0).getWidth());
-				int newHeight = (int) (getChildAt(0).getHeight());
-				int currentWidth = (int) (getWidth());
-				int currentHeight = (int) (getHeight());
-				// int newY = 0;
-				// if(y <= getChildAt(0).getHeight()){
-				// int difference = y - getChildAt(0).getHeight();
-				// newY = y + difference;
-				// }
 				if (getChildCount() > 0) {
-					View child = getChildAt(0);
-					Log.d(LCAT, "computeScroll - scrollTo being called!");
-					scrollTo(
-							clamp(x, currentWidth - getPaddingRight()
-									- getPaddingLeft(), newWidth),
-							clamp(y, currentHeight - getPaddingBottom()
-									- getPaddingTop(), newHeight));
-					Log.d(LCAT,
-							"computeScroll - CurZoom: "
-									+ curZoom
-									+ "x(n: "
-									+ x
-									+ ", my: "
-									+ (getWidth() - getPaddingRight() - getPaddingLeft())
-									+ ", child: " + newWidth + ")" + "y(n: "
-									+ y + ", my: "
-									+ (getPaddingBottom() - getPaddingTop())
-									+ ", child: " + newHeight);
+					scrollTo(newClamp("x", x), newClamp("y", y));
 				} else {
-					Log.d(LCAT,
-							"computeScroll - getChildCount <= 0 scrollTo being called!");
 					scrollTo(x, y);
 				}
 				if (oldX != getScrollX() || oldY != getScrollY()) {
 					onScrollChanged(getScrollX(), getScrollY(), oldX, oldY);
-					Log.d(LCAT, "computeScroll - onScrollChanged called!");
 				}
-				postInvalidate();
 			}
 		}
 
@@ -1075,7 +965,6 @@ public class NappscrollView extends TiUIView {
 			if (scrollDelta != 0) {
 				scrollBy(0, scrollDelta);
 			}
-			Log.d(LCAT, "scrollToChild");
 		}
 
 		private boolean scrollToChildRect(Rect rect, boolean immediate) {
@@ -1088,7 +977,6 @@ public class NappscrollView extends TiUIView {
 					smoothScrollBy(0, delta);
 				}
 			}
-			Log.d(LCAT, "scrollToChildRect");
 			return scroll;
 		}
 
@@ -1102,7 +990,6 @@ public class NappscrollView extends TiUIView {
 			if (rect.top > 0) {
 				screenTop += fadingEdge;
 			}
-
 			if (rect.bottom < getChildAt(0).getHeight()) {
 				screenBottom -= fadingEdge;
 			}
@@ -1113,22 +1000,17 @@ public class NappscrollView extends TiUIView {
 				} else {
 					scrollYDelta += (rect.bottom - screenBottom);
 				}
-
 				int bottom = getChildAt(0).getBottom();
 				int distanceToBottom = bottom - screenBottom;
 				scrollYDelta = Math.min(scrollYDelta, distanceToBottom);
-
 			} else if (rect.top < screenTop && rect.bottom < screenBottom) {
-
 				if (rect.height() > height) {
 					scrollYDelta -= (screenBottom - rect.bottom);
 				} else {
 					scrollYDelta -= (screenTop - rect.top);
 				}
-
 				scrollYDelta = Math.max(scrollYDelta, -getScrollY());
 			}
-			Log.d(LCAT, "computeScrollDeltaToGetChildRectOnScreen");
 			return scrollYDelta;
 		}
 
@@ -1141,7 +1023,6 @@ public class NappscrollView extends TiUIView {
 					mChildToScrollTo = focused;
 				}
 			}
-			Log.d(LCAT, "requestChildFocus");
 			super.requestChildFocus(child, focused);
 		}
 
@@ -1161,7 +1042,6 @@ public class NappscrollView extends TiUIView {
 			if (nextFocus == null) {
 				return false;
 			}
-			Log.d(LCAT, "onRequestFocusInDescendants");
 			return nextFocus.requestFocus(direction, previouslyFocusedRect);
 		}
 
@@ -1170,14 +1050,12 @@ public class NappscrollView extends TiUIView {
 				Rect rectangle, boolean immediate) {
 			rectangle.offset(child.getLeft() - child.getScrollX(),
 					child.getTop() - child.getScrollY());
-			Log.d(LCAT, "requestChildRectangleOnScreen");
 			return scrollToChildRect(rectangle, immediate);
 		}
 
 		@Override
 		public void requestLayout() {
 			mIsLayoutDirty = true;
-			// TODO
 			Log.d(LCAT, "requestLayout");
 			super.requestLayout();
 		}
@@ -1231,21 +1109,13 @@ public class NappscrollView extends TiUIView {
 		public void fling(int velocityX, int velocityY, int x, int y) {
 			if (getChildCount() > 0) {
 				int height = getHeight() - getPaddingBottom() - getPaddingTop();
-				//int bottom = (int) (getChildAt(0).getHeight() * curZoom);
 				int bottom = getScaledChildSide(getChildAt(0).getHeight());
 				int width = (getWidth() - getPaddingRight() - getPaddingLeft());
-				//int right = (int) (getChildAt(0).getWidth() * curZoom);
 				int right = getScaledChildSide(getChildAt(0).getWidth());
-				mScroller.fling(getScrollX(), getScrollY(), velocityX, velocityY, 0, right - width, 0, bottom - height);
-				Log.d(LCAT, "Fling - x: " + x + ", y: " + y + ", getScrollX: " + getScrollX() + ", getScrollY: " + getScrollY());
-				Log.d(LCAT, "Fling - velocityX: " + velocityX + ", velocityY: " + velocityY);
-				
-				// SRC: http://www.java2s.com/Open-Source/Android/Map/ametro/org/ametro/ui/controllers/MultiTouchController.java.htm
-				//scroller.fling((int) -currentX, (int) -currentY, vx, vy, 0, maxX, 0, maxY);
-
+				mScroller.fling(getScrollX(), getScrollY(), velocityX,
+						velocityY, 0, right - width, 0, bottom - height);
 				final boolean movingDown = velocityY > 0;
 				final boolean movingRight = velocityX > 0;
-
 				View newFocused = findFocusableViewInMyBounds(movingRight,
 						mScroller.getFinalX(), movingDown,
 						mScroller.getFinalY(), findFocus());
@@ -1258,50 +1128,44 @@ public class NappscrollView extends TiUIView {
 					mTwoDScrollViewMovedFocus = true;
 					mTwoDScrollViewMovedFocus = false;
 				}
-
 				awakenScrollBars(mScroller.getDuration());
 				Log.d(LCAT, "fling");
 				invalidate();
 			}
 		}
 
+		private Rect getScrollBounds(float f, float g, float h, float i) {
+			int xmin = (int) (getWidth() - h);
+			int xmax = (int) -f;
+			int ymin = (int) (getHeight() - i);
+			int ymax = (int) -g;
+			if (xmin > xmax) xmin = xmax = (xmin + xmax)/2;
+			if (ymin > ymax) ymin = ymax = (ymin + ymax)/2;
+
+			return new Rect(xmin, ymin, xmax, ymax);
+		}
+		
+		private Rect getScrollBounds(View v) {
+			return getScrollBounds(v.getLeft() + x,
+					               v.getTop() + y,
+					               v.getLeft() + v.getMeasuredWidth() + x,
+					               v.getTop() + v.getMeasuredHeight() + y);
+		}
+		
+		private Point getCorrection(Rect bounds) {
+			return new Point(Math.min(Math.max(0,bounds.left),bounds.right),
+					         Math.min(Math.max(0,bounds.top),bounds.bottom));
+		}
+		
+	
+		
 		public void scrollTo(int x, int y) {
-			Log.d(LCAT, "scrollTo called - x: " + x + ", y: " + y);
+			Point point = getCorrection(getScrollBounds(this));
+			this.x = x;
+			this.y = y;
 			if (getChildCount() > 0) {
-				View child = getChildAt(0);
-				// as long as curZoom is >= 1 this works with the border.
-				Log.d(LCAT, "scrollTo child width: " + child.getWidth()
-						* curZoom);
-
-				// Size of view
-				int newWidth = (int) (child.getWidth());
-				int newHeight = (int) (child.getHeight());
-
-				// current size
-				int currentWidth, currentHeight;
-
-				currentWidth = (int) (getWidth());
-				currentHeight = (int) (getHeight());
-
-				Log.d(LCAT, "scrollTo - currentWidth: " + currentWidth
-						+ ", currentHeight: " + currentHeight);
-
-				Log.d(LCAT, "newWidth: " + newWidth + ", newHeight: "
-						+ newHeight);
-				Log.d(LCAT, "getPaddingLeft: " + getPaddingLeft()
-						+ ", getPaddingRight: " + getPaddingRight());
-
-				// TODO wrong output here!!!
-				Log.d(LCAT,
-						"scrollTo: "
-								+ clamp(x, currentWidth - getPaddingRight()
-										- getPaddingLeft(), newWidth));
-				x = clamp(x, currentWidth - getPaddingRight()
-						- getPaddingLeft(), newWidth);
-				y = clamp(y, currentHeight - getPaddingBottom()
-						- getPaddingTop(), newHeight);
-				Log.d(LCAT, "scrollTo calculatedCoordinates - x: " + x
-						+ ", y: " + y);
+				x = newClamp("x", x);
+				y = newClamp("y", y);
 				if (x != getScrollX() || y != getScrollY()) {
 					Log.d(LCAT,
 							"scrollTo x!= getScrollX || y=! getScrollY - x: "
@@ -1313,30 +1177,42 @@ public class NappscrollView extends TiUIView {
 			}
 		}
 
-		// private int calculateRatio() {
-		// int imageX, imageY, viewX, viewY;
-		// imageX = getWidth();
-		// imageY = getHeight();
-		// viewX = (int) (getChildAt(0).getWidth() * curZoom);
-		// viewY = (int) (getChildAt(0).getHeight() * curZoom);
-		// int ratio = (viewX + viewY) / (imageX + imageY);
-		// Log.d(LCAT, "calculateRatio: " + ratio);
-		// return ratio;
+		// private int clamp(String direction, int coordinate, int innerSize,
+		// int outerSize) {
+		// Log.d(LCAT, "CLAMP - curZoom: " + curZoom + ", coordinate: "
+		// + coordinate + ", innerSize: " + innerSize
+		// + ", outerSize: " + outerSize);
+		// if (innerSize >= outerSize || coordinate < 0) {
+		// // Log.d(LCAT, "clamp: returning 0");
+		// return 0;
+		// }
+		// if ((innerSize + coordinate) > outerSize) {
+		// // Log.d(LCAT, "clamp2: " + (child - my));
+		// return outerSize - innerSize;
+		// }
+		// Log.d(LCAT, "clamp3: " + coordinate);
+		// return coordinate;
 		// }
 
-		private int clamp(int coordinate, int innerSize, int outerSize) {
-			Log.d(LCAT, "CLAMP - curZoom: " + curZoom + ", coordinate: "
-					+ coordinate + ", innerSize: " + innerSize
-					+ ", outerSize: " + outerSize);
-			if (innerSize >= outerSize || coordinate < 0) {
-				// Log.d(LCAT, "clamp: returning 0");
-				return 0;
-			}
-			if ((innerSize + coordinate) > outerSize) {
-				// Log.d(LCAT, "clamp2: " + (child - my));
-				return outerSize - innerSize;
-			}
-			Log.d(LCAT, "clamp3: " + coordinate);
+		private int newClamp(String direction, int coordinate) {		
+			int innerWidthSize = getWidth() - getPaddingRight()- getPaddingLeft();
+			int innerHeightSize = getHeight() - getPaddingTop()- getPaddingBottom();
+			int outerWidthSize = getScaledChildSide(getChildAt(0).getWidth());
+			int outerHeightSize = getScaledChildSide(getChildAt(0).getHeight());
+				if (coordinate < 0 || innerWidthSize >= outerWidthSize
+						|| innerHeightSize >= outerHeightSize) {
+					return 0;
+				}
+				if (direction.equals("x")) {
+					if (coordinate + innerWidthSize >= outerWidthSize) {
+						return outerWidthSize - innerWidthSize;
+					}
+				} else if (direction.equals("y")) {
+					if (coordinate + innerHeightSize >= outerHeightSize) {
+						return outerHeightSize - innerHeightSize;
+					}
+				}
+			invalidate();
 			return coordinate;
 		}
 
@@ -1345,7 +1221,7 @@ public class NappscrollView extends TiUIView {
 		 */
 		public class ScaleListener extends
 				ScaleGestureDetector.SimpleOnScaleGestureListener {
-
+			
 			public ScaleListener() {
 				Log.d(LCAT, "Nikolaj - ScaleListener constructor call");
 			}
@@ -1354,8 +1230,6 @@ public class NappscrollView extends TiUIView {
 			public boolean onScaleBegin(ScaleGestureDetector detector) {
 				KrollDict event = new KrollDict();
 				event.put("scale", curZoom);
-				Log.d(LCAT, "Nikolaj - onScaleBegin - curZoom value: "
-						+ curZoom);
 				proxy.fireEvent("pinchStart", event);
 				return true;
 			}
@@ -1366,27 +1240,26 @@ public class NappscrollView extends TiUIView {
 			 */
 			@Override
 			public boolean onScale(ScaleGestureDetector detector) {
-				// TODO
-				curZoom *= detector.getScaleFactor();
-				curZoom = Math.max(minZoom, Math.min(curZoom, maxZoom));
-				Log.d(LCAT, "Nikolaj - onScale - curZoom value: " + curZoom);
-				Log.d(LCAT, "onScale - (child)Width: "
-						+ getChildAt(0).getWidth() * curZoom
-						+ ", (child)Height: " + getChildAt(0).getHeight()
-						* curZoom + ", measuredWidth: "
-						+ getChildAt(0).getMeasuredWidth()
-						+ ", measuredHeight: "
-						+ getChildAt(0).getMeasuredHeight());
-				setFocusX(detector.getFocusX());
-				setFocusY(detector.getFocusY());
-				Log.d(LCAT, "onScale: focusX: " + detector.getFocusX()
-						+ ", focusY: " + detector.getFocusY());
-				// scale
-				setScale(curZoom);
-				// KrollDict event = new KrollDict();
-				// event.put("scale", curZoom);
-				// proxy.fireEvent("pinching", event);
-				// calculateRatio();
+				//calculateTranslateDistance(detector);
+				Log.d(LCAT, "onScale - checkPinchBoundsX: " + checkPinchBounds(detector, "x") + ", checkPinchBoundsY: " + checkPinchBounds(detector, "y"));
+				if (checkPinchBounds(detector, "x") || checkPinchBounds(detector, "y")) {
+					// gets the old/current scale factor
+					oldCurZoom = getScale();
+					// calculates the new scale factor
+					curZoom = (oldCurZoom * detector.getScaleFactor());
+					// verifies scale factor value
+					curZoom = Math.max(minZoom, Math.min(curZoom, maxZoom));
+					if (curZoom != oldCurZoom) {
+						float curZoomDiff = (curZoom / oldCurZoom);
+						translateX = (1 - curZoomDiff)
+								* (detector.getFocusX() + x) / curZoom;
+						translateY = (1 - curZoomDiff)
+								* (detector.getFocusY() + y) / curZoom;
+						setFocusX((detector.getFocusX() + x));
+						setFocusY((detector.getFocusY() + y));
+						setScale(curZoom);
+					}
+				}
 				return true;
 			}
 
@@ -1397,6 +1270,47 @@ public class NappscrollView extends TiUIView {
 				event.put("scale", curZoom);
 				Log.d(LCAT, "Nikolaj - onScaleEnd - curZoom value: " + curZoom);
 				proxy.fireEvent("pinchEnd", event);
+			}	
+		}
+				
+//		public Point calculateWrongBounds(){
+//			float currentX = (focusX);
+//			float currentY = (focusY);
+//			Log.d(LCAT, "calculateWrongBounds - displayRect - left: " + currentX + ", top: " + currentY + ", right: " + (currentX + getWidth()) + ", bottom: " + (currentY + getHeight()));
+//			RectF displayRect = new RectF(currentX, currentY, (currentX + getWidth()), (currentY + getHeight()));
+//			Log.d(LCAT, "calculateWrongBounds - viewRect - left:" + currentX + ", top: " + currentY + ", right: " + getScaledChildSide(getChildAt(0).getWidth()) + ", bottom: " + getScaledChildSide(getChildAt(0).getHeight()));
+//			RectF viewRect = new RectF(currentX, currentY, 2200 * curZoom, 2200 * curZoom);			
+//			Log.d(LCAT, "calculateWrongBounds - viewRect - width: " + viewRect.width() + "(" + getScaledChildSide(getChildAt(0).getWidth()) + ")" + ", height: " + viewRect.height() + "(" + getScaledChildSide(getChildAt(0).getHeight()) + ")");
+//			Log.d(LCAT, "calculateWrongBounds - adjust with: " + ((getScaledChildSide(getChildAt(0).getWidth())) - viewRect.width()) + ", height: " + ((getScaledChildSide(getChildAt(0).getHeight())) - viewRect.height()));
+//			int pointX = (int) (getScaledChildSide(getChildAt(0).getWidth()) - viewRect.width());
+//			int pointY = (int) ((getScaledChildSide(getChildAt(0).getHeight()) - viewRect.height()));
+//			Point point = new Point(pointX, pointY);
+//			return point;
+//		}		
+		
+//		private void calculateTranslateDistance(ScaleGestureDetector detector){
+//			float middle = (detector.getFocusX() + x) + (getScaledChildSide(getChildAt(0).getWidth() / 2));
+//			Log.d(LCAT, "calculateTranslateDistance - middle: " + middle + ", width: " + getScaledChildSide(getChildAt(0).getWidth()));
+//		}
+		
+		// used to check if, when pinching, the middle of the display doesnt go beyond the bounds.
+		private boolean checkPinchBounds(ScaleGestureDetector detector,String direction) {
+			int childWidth = getScaledChildSide(getChildAt(0).getWidth());
+			int childHeight = getScaledChildSide(getChildAt(0).getHeight());
+			int displayWidth = getWidth() - getPaddingRight()- getPaddingLeft();
+			int displayHeight = getHeight() - getPaddingTop()- getPaddingBottom();
+			float middleX = (detector.getFocusX() + x);
+			float middleY = (detector.getFocusY() + y);
+			if (direction.equals("x")) {
+				if ((middleX + (displayWidth / 2)) <= childWidth || (middleX - (displayWidth / 2)) >= 0) {
+					return true;
+				}
+				return false;
+			} else {
+				if ((middleY + (displayHeight / 2)) <= childHeight || (middleY - (displayHeight / 2)) >= 0) {
+					return true;
+				}
+				return false;
 			}
 		}
 	}
@@ -1454,7 +1368,6 @@ public class NappscrollView extends TiUIView {
 			getNativeView().getLayoutParams().width = TiConvert.toInt(newValue);
 		}
 		super.propertyChanged(key, oldValue, newValue, proxy);
-
 	}
 
 	/**
@@ -1482,19 +1395,19 @@ public class NappscrollView extends TiUIView {
 				"Nikolaj - scrollView initialized - " + scrollView.toString());
 		setNativeView(scrollView);
 
-		/*
-		 * //TODO: NOT WORKING - Need to implement scroll indicators boolean
-		 * showHorizontalScrollBar = false; boolean showVerticalScrollBar =
-		 * false; if
-		 * (d.containsKey(TiC.PROPERTY_SHOW_HORIZONTAL_SCROLL_INDICATOR)) {
-		 * showHorizontalScrollBar = TiConvert.toBoolean(d,
-		 * TiC.PROPERTY_SHOW_HORIZONTAL_SCROLL_INDICATOR); } if
-		 * (d.containsKey(TiC.PROPERTY_SHOW_VERTICAL_SCROLL_INDICATOR)) {
-		 * showVerticalScrollBar = TiConvert.toBoolean(d,
-		 * TiC.PROPERTY_SHOW_VERTICAL_SCROLL_INDICATOR); }
-		 * nativeView.setHorizontalScrollBarEnabled(showHorizontalScrollBar);
-		 * nativeView.setVerticalScrollBarEnabled(showVerticalScrollBar);
-		 */
+		// TODO: NOT WORKING - Need to implement scroll indicators
+		boolean showHorizontalScrollBar = false;
+		boolean showVerticalScrollBar = false;
+		if (d.containsKey(TiC.PROPERTY_SHOW_HORIZONTAL_SCROLL_INDICATOR)) {
+			showHorizontalScrollBar = TiConvert.toBoolean(d,
+					TiC.PROPERTY_SHOW_HORIZONTAL_SCROLL_INDICATOR);
+		}
+		if (d.containsKey(TiC.PROPERTY_SHOW_VERTICAL_SCROLL_INDICATOR)) {
+			showVerticalScrollBar = TiConvert.toBoolean(d,
+					TiC.PROPERTY_SHOW_VERTICAL_SCROLL_INDICATOR);
+		}
+		nativeView.setHorizontalScrollBarEnabled(showHorizontalScrollBar);
+		nativeView.setVerticalScrollBarEnabled(showVerticalScrollBar);
 		super.processProperties(d);
 	}
 
@@ -1527,22 +1440,13 @@ public class NappscrollView extends TiUIView {
 	}
 
 	public void scrollTo(int x, int y) {
+		
 		Log.d(LCAT, "second scrollTo method has been called!!!");
 		x *= curZoom;
 		y *= curZoom;
 		getNativeView().scrollTo(x, y);
 		getNativeView().computeScroll();
 	}
-
-	// public void scrollToBottom() {
-	// View view = getNativeView();
-	// TDSV scrollView = (TDSV) view;
-	// scrollView.fullScroll(View.FOCUS_DOWN, false);
-	// }
-
-	// public void setScale(float scale){
-	// scrollView.setScale(scale);
-	// }
 
 	@Override
 	public void add(TiUIView child) {
