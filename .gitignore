@@ -1,9 +1,9 @@
 tmp
 bin
 build
-*.zip
 .apt_generated
 *.class
 *.pyc
 *.pyo
 .DS_Store
+java-sources.txt
