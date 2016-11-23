@@ -2,9 +2,9 @@
 # this is your module manifest and used by Titanium
 # during compilation, packaging, distribution, etc.
 #
-version: 1.0.2
-apiversion: 2
-architectures: armeabi armeabi-v7a x86
+version: 2.0.0
+apiversion: 3
+architectures: armeabi-v7a x86
 description: This implementation enables Android to scroll a view in vertically and horizontally, (2D).
 author: Mads Moller
 license: MIT license
@@ -16,4 +16,4 @@ name: androidscroll
 moduleid: dk.napp.androidscroll
 guid: c95e70ee-0209-4b34-9e5d-b65eb06fb1c8
 platform: android
-minsdk: 5.5.1.GA
+minsdk: 6.0.0.GA
