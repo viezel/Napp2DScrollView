@@ -28,7 +28,6 @@ import android.graphics.Point;
 import android.graphics.PointF;
 import android.graphics.Rect;
 import android.graphics.RectF;
-import android.util.FloatMath;
 import android.view.Display;
 import android.view.FocusFinder;
 import android.view.MotionEvent;
@@ -476,7 +475,7 @@ public class NappscrollView extends TiUIView {
 		private float distanceBetweenTwoFingers(MotionEvent event) {
 			float x = event.getX(0) - event.getX(1);
 			float y = event.getY(0) - event.getY(1);
-			return FloatMath.sqrt(x * x + y * y);
+			return (x * x + y * y) * (x * x + y * y);
 		}
 
 		@Override
